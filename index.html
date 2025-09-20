@@ -210,7 +210,39 @@
   background: #43a047;
 }
       
-      
+           #btnDistance {
+            position:absolute;
+            top:10px; left:10px;
+            z-index:100;
+            padding:8px 12px;
+            background:#fff;
+            border:1px solid #999;
+            border-radius:5px;
+            font-size:14px;
+            cursor:pointer;
+        }
+        #btnDistance.on {
+            background:#4285f4;
+            color:#fff;
+            font-weight:bold;
+        }
+        .dotOverlay {
+            background:#fff;
+            border:2px solid #333;
+            border-radius:4px;
+            padding:3px 6px;
+            font-size:11px;
+            white-space:nowrap;
+        }
+        .distanceOverlay {
+            background:#fff;
+            border:2px solid #333;
+            border-radius:4px;
+            padding:4px 6px;
+            font-size:13px;
+            font-weight:bold;
+            white-space:nowrap;
+        }
   </style>
 </head>
 <body>
@@ -250,6 +282,9 @@
     <span id="btnCurrentMe" class="btn btn-common" onclick="toggleMyLocation()">위치</span>
     <span id="btnTrackMe" class="btn btn-common" onclick="toggleTracking()">추적</span>
   </div>
+    <button id="btnDistance">거리재기</button>
+
+	
 </body>
 
 <script type="text/javascript" src="//dapi.kakao.com/v2/maps/sdk.js?appkey=2634b7b6dd61e41a4d6c0bf40a2ef820&libraries=services,clusterer,drawing"></script>
@@ -1003,7 +1038,125 @@ function drawGroupLinesMST(){
 
 // 버튼 클릭 이벤트
 
+    var measuring = false;
+    var linePath = [];
+    var polyline = null;
+    var tempLine = null; // 마우스 따라다니는 점선
+    var overlays = []; 
+    var totalDistance = 0;
+    var lastOverlay = null;
 
+    document.getElementById('btnDistance').addEventListener('click', function(){
+        measuring = !measuring;
+        this.classList.toggle("on");
+
+        if(!measuring){
+            resetMeasure();
+        }
+    });
+
+    // 지도 클릭 시: 확정 점 추가
+    kakao.maps.event.addListener(map, 'click', function(mouseEvent) {
+        if(!measuring) return;
+
+        var clickPosition = mouseEvent.latLng;
+        linePath.push(clickPosition);
+
+        // 확정 polyline 업데이트
+        drawPolyline();
+
+        // 거리 계산
+        var distance = polyline.getLength();
+        var segmentDistance = 0;
+        if(linePath.length > 1){
+            var prev = linePath[linePath.length-2];
+            segmentDistance = Math.round(new kakao.maps.Polyline({path:[prev, clickPosition]}).getLength());
+        }
+
+        // 기존 마지막 누적거리 오버레이 제거
+        if(lastOverlay){
+            lastOverlay.setMap(null);
+            lastOverlay = null;
+        }
+
+        // 중간 오버레이 (이전 지점과 거리 or 시작)
+        var dotContent = (linePath.length > 1) 
+            ? '<div class="dotOverlay">'+ segmentDistance.toLocaleString() +' m</div>'
+            : '<div class="dotOverlay">시작</div>';
+
+        var dotOverlay = new kakao.maps.CustomOverlay({
+            position: clickPosition,
+            content: dotContent,
+            yAnchor: 1
+        });
+        dotOverlay.setMap(map);
+        overlays.push(dotOverlay);
+
+        // 총 거리 누적
+        totalDistance = Math.round(distance);
+        var distOverlay = new kakao.maps.CustomOverlay({
+            position: clickPosition,
+            content: '<div class="distanceOverlay" onclick="resetMeasure()">총 ' 
+                     + totalDistance.toLocaleString() + ' m</div>',
+            yAnchor: -0.2
+        });
+        distOverlay.setMap(map);
+        lastOverlay = distOverlay;
+
+        // 마지막 dotOverlay도 클릭 시 리셋 가능
+        dotOverlay.setContent('<div class="dotOverlay" onclick="resetMeasure()">'+ 
+                              ((linePath.length>1)?segmentDistance.toLocaleString()+' m':'시작') +'</div>');
+    });
+
+    // 마우스 이동 시: 점선 미리보기
+    kakao.maps.event.addListener(map, 'mousemove', function(mouseEvent) {
+        if(!measuring) return;
+        if(linePath.length === 0) return; // 시작점 없으면 패스
+
+        var movePosition = mouseEvent.latLng;
+
+        // 기존 점선 제거
+        if(tempLine){
+            tempLine.setMap(null);
+        }
+
+        // 마지막 점 → 현재 마우스 좌표
+        tempLine = new kakao.maps.Polyline({
+            path: [linePath[linePath.length-1], movePosition],
+            strokeWeight: 3,
+            strokeColor: '#666',
+            strokeOpacity: 0.7,
+            strokeStyle: 'dash'
+        });
+        tempLine.setMap(map);
+    });
+
+    // polyline 확정 그리기
+    function drawPolyline(){
+        if(polyline) polyline.setMap(null);
+        polyline = new kakao.maps.Polyline({
+            path: linePath,
+            strokeWeight: 4,
+            strokeColor: '#FF0000',
+            strokeOpacity: 0.9,
+            strokeStyle: 'solid'
+        });
+        polyline.setMap(map);
+    }
+
+    // 거리재기 초기화
+    function resetMeasure(){
+        linePath = [];
+        totalDistance = 0;
+        if(polyline) polyline.setMap(null);
+        if(tempLine) tempLine.setMap(null);
+        overlays.forEach(o => o.setMap(null));
+        overlays = [];
+        if(lastOverlay) lastOverlay.setMap(null);
+        lastOverlay = null;
+    }
+
+    window.resetMeasure = resetMeasure;
 
 
 
